@@ -311,8 +311,7 @@ gst_ffmpegviddec_class_init (GstFFMpegVidDecClass * klass)
   gst_type_mark_as_plugin_api (GST_FFMPEGVIDDEC_TYPE_SKIPFRAME, 0);
   gst_type_mark_as_plugin_api (GST_FFMPEGVIDDEC_TYPE_THREAD_TYPE, 0);
 
-  gst_meta_register_custom ("GstFFMpegPictureMeta", meta_tags, NULL,
-      NULL, NULL);
+  gst_meta_register_custom ("GstPictureTypeMeta", meta_tags, NULL, NULL, NULL);
 }
 
 static void
@@ -1844,7 +1843,7 @@ gst_ffmpegviddec_video_frame (GstFFMpegVidDec * ffmpegdec,
     out_frame->output_buffer =
         gst_buffer_make_writable (out_frame->output_buffer);
     GstCustomMeta *meta = gst_buffer_add_custom_meta (out_frame->output_buffer,
-        "GstFFMpegPictureMeta");
+        "GstPictureTypeMeta");
     GstStructure *structure = gst_custom_meta_get_structure (meta);
     GValue val = G_VALUE_INIT;
 
