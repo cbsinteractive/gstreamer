@@ -854,7 +854,7 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
     } else if (!self->schedule) {
       if (GST_CLOCK_TIME_IS_VALID (self->previous_video_running_time_end)) {
         if (caption_time < self->previous_video_running_time_end) {
-          GST_WARNING_OBJECT (self,
+          GST_INFO_OBJECT (self,
               "Caption buffer before end of last video frame, dropping");
 
           gst_aggregator_pad_drop_buffer (caption_pad);
@@ -862,7 +862,7 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
           continue;
         }
       } else if (caption_time < self->current_video_running_time) {
-        GST_WARNING_OBJECT (self,
+        GST_INFO_OBJECT (self,
             "Caption buffer before current video frame, dropping");
 
         gst_aggregator_pad_drop_buffer (caption_pad);
@@ -1064,8 +1064,41 @@ gst_cc_combiner_aggregate (GstAggregator * aggregator, gboolean timeout)
           GST_TIME_ARGS (self->current_video_running_time),
           GST_TIME_ARGS (self->current_video_running_time_end));
     } else {
-      /* Otherwise we had no buffer queued currently. Let's do that now
-       * so that we can collect captions for it */
+      /* Otherwise we had no buffer queued currently.
+       * We check if the buffer is not a B frame, if so we drop it */
+      GstCustomMeta *meta =
+          gst_buffer_get_custom_meta (video_buf, "GstPictureTypeMeta");
+      if (meta) {
+        GstStructure *s = gst_custom_meta_get_structure (meta);
+        const char *frame_type = gst_structure_get_string (s, "picture-type");
+
+        if (!g_strcmp0 (frame_type, "B")) {
+          GstAggregatorPad *src_pad =
+              GST_AGGREGATOR_PAD (GST_AGGREGATOR_SRC_PAD (self));
+
+          GST_INFO_OBJECT (aggregator, "Picture type is '%s', skipping..",
+              frame_type);
+
+          gst_aggregator_pad_drop_buffer (video_pad);
+          gst_object_unref (video_pad);
+          gst_aggregator_selected_samples (GST_AGGREGATOR_CAST (self),
+              GST_BUFFER_PTS (video_buf), GST_BUFFER_DTS (video_buf),
+              GST_BUFFER_DURATION (video_buf), NULL);
+          src_pad->segment.position =
+              GST_BUFFER_PTS (video_buf) + GST_BUFFER_DURATION (video_buf);
+
+          return gst_aggregator_finish_buffer (GST_AGGREGATOR_CAST (self),
+              video_buf);
+        } else {
+          GST_INFO_OBJECT (aggregator, "Picture type is '%s', continuing..",
+              frame_type);
+        }
+      } else {
+        GST_WARNING_OBJECT (aggregator,
+            "Could not determine the type of video frame, continuing..");
+      }
+
+      /* Let's queue the buffer now so that we can collect captions for it */
       gst_buffer_replace (&self->current_video_buffer, video_buf);
       self->current_video_running_time = video_start;
       gst_aggregator_pad_drop_buffer (video_pad);

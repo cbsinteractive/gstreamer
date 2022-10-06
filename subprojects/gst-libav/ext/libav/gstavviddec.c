@@ -207,7 +207,8 @@ gst_ffmpegviddec_base_init (GstFFMpegVidDecClass * klass)
       "Codec/Decoder/Video", description,
       "Wim Taymans <wim.taymans@gmail.com>, "
       "Ronald Bultje <rbultje@ronald.bitfreak.net>, "
-      "Edward Hervey <bilboed@bilboed.com>");
+      "Edward Hervey <bilboed@bilboed.com>, "
+      "Rafael Caricio <rafael@caricio.com>");
   g_free (longname);
   g_free (description);
 
@@ -245,6 +246,7 @@ gst_ffmpegviddec_class_init (GstFFMpegVidDecClass * klass)
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstVideoDecoderClass *viddec_class = GST_VIDEO_DECODER_CLASS (klass);
   int caps;
+  static const gchar *meta_tags[] = { NULL };
 
   parent_class = g_type_class_peek_parent (klass);
 
@@ -308,6 +310,8 @@ gst_ffmpegviddec_class_init (GstFFMpegVidDecClass * klass)
   gst_type_mark_as_plugin_api (GST_FFMPEGVIDDEC_TYPE_LOWRES, 0);
   gst_type_mark_as_plugin_api (GST_FFMPEGVIDDEC_TYPE_SKIPFRAME, 0);
   gst_type_mark_as_plugin_api (GST_FFMPEGVIDDEC_TYPE_THREAD_TYPE, 0);
+
+  gst_meta_register_custom ("GstPictureTypeMeta", meta_tags, NULL, NULL, NULL);
 }
 
 static void
@@ -1765,7 +1769,7 @@ gst_ffmpegviddec_video_frame (GstFFMpegVidDec * ffmpegdec,
   GST_DEBUG_OBJECT (ffmpegdec, "repeat_pict:%d",
       ffmpegdec->picture->repeat_pict);
   GST_DEBUG_OBJECT (ffmpegdec, "corrupted frame: %d",
-      ! !(ffmpegdec->picture->flags & AV_FRAME_FLAG_CORRUPT));
+      !!(ffmpegdec->picture->flags & AV_FRAME_FLAG_CORRUPT));
 
   if (!gst_ffmpegviddec_negotiate (ffmpegdec, ffmpegdec->context,
           ffmpegdec->picture, GST_BUFFER_FLAGS (out_frame->input_buffer)))
@@ -1832,6 +1836,49 @@ gst_ffmpegviddec_video_frame (GstFFMpegVidDec * ffmpegdec,
             "Closed caption meta already exists: will not add new caption meta");
       }
     }
+  }
+
+  /* Add picture info metadata to buffers */
+  {
+    out_frame->output_buffer =
+        gst_buffer_make_writable (out_frame->output_buffer);
+    GstCustomMeta *meta = gst_buffer_add_custom_meta (out_frame->output_buffer,
+        "GstPictureTypeMeta");
+    GstStructure *structure = gst_custom_meta_get_structure (meta);
+    GValue val = G_VALUE_INIT;
+
+    /* convert picture type enum to string value */
+    g_value_init (&val, G_TYPE_STRING);
+    switch (ffmpegdec->picture->pict_type) {
+      case AV_PICTURE_TYPE_B:
+        g_value_set_string (&val, "B");
+        break;
+      case AV_PICTURE_TYPE_I:
+        g_value_set_string (&val, "I");
+        break;
+      case AV_PICTURE_TYPE_BI:
+        g_value_set_string (&val, "BI");
+        break;
+      case AV_PICTURE_TYPE_P:
+        g_value_set_string (&val, "P");
+        break;
+      case AV_PICTURE_TYPE_S:
+        g_value_set_string (&val, "S");
+        break;
+      case AV_PICTURE_TYPE_SI:
+        g_value_set_string (&val, "SI");
+        break;
+      case AV_PICTURE_TYPE_SP:
+        g_value_set_string (&val, "SP");
+        break;
+      case AV_PICTURE_TYPE_NONE:
+        g_value_set_string (&val, "NONE");
+        break;
+      default:
+        break;
+    }
+    gst_structure_set_value (structure, "picture-type", &val);
+    g_value_unset (&val);
   }
 
   /* cleaning time */
